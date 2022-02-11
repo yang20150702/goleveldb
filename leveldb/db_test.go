@@ -625,6 +625,28 @@ func TestDB_EmptyBatch(t *testing.T) {
 	h.get("foo", false)
 }
 
+func TestDB_WriteBatchMerge(t *testing.T) {
+	h := newDbHarnessWopt(t, &opt.Options{
+		DisableLargeBatchTransaction: true,
+		NoWriteMerge:                 false,
+	})
+	defer h.close()
+
+	i := 0
+	batch := new(Batch)
+	for k := 0; k < 10; k++ {
+		for j := 0; j < 10; j++ {
+			batch.Put([]byte(fmt.Sprintf("batch-%d.%d.%d", i, k, j)), []byte(fmt.Sprintf("v%d", k)))
+		}
+	}
+	err := h.db.Write(batch, &opt.WriteOptions{
+		NoWriteMerge: false,
+	})
+	if err != nil {
+		t.Error("writing empty batch yield error: ", err)
+	}
+}
+
 func TestDB_GetFromFrozen(t *testing.T) {
 	h := newDbHarnessWopt(t, &opt.Options{
 		DisableLargeBatchTransaction: true,
