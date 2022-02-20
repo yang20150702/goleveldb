@@ -11,6 +11,8 @@ import (
 	"unsafe"
 )
 
+// lruNode 和 cache node 不同；一个lruNode对应一个Node
+// lruNode 组成双向链接
 type lruNode struct {
 	n   *Node
 	h   *Handle
@@ -19,6 +21,7 @@ type lruNode struct {
 	next, prev *lruNode
 }
 
+// 插入涉及三个节点的变更：at --> n --> x(at.next);
 func (n *lruNode) insert(at *lruNode) {
 	x := at.next
 	at.next = n
@@ -42,7 +45,7 @@ type lru struct {
 	mu       sync.Mutex
 	capacity int
 	used     int
-	recent   lruNode
+	recent   lruNode // 头节点
 }
 
 func (r *lru) reset() {
@@ -63,6 +66,7 @@ func (r *lru) SetCapacity(capacity int) {
 	r.mu.Lock()
 	r.capacity = capacity
 	for r.used > r.capacity {
+		// 尾部节点
 		rn := r.recent.prev
 		if rn == nil {
 			panic("BUG: invalid LRU used or capacity counter")
@@ -115,9 +119,11 @@ func (r *lru) Promote(n *Node) {
 	}
 }
 
+// Ban: 在lru中废除该节点
 func (r *lru) Ban(n *Node) {
 	r.mu.Lock()
 	if n.CacheData == nil {
+		// node没有对应的lru node
 		n.CacheData = unsafe.Pointer(&lruNode{n: n, ban: true})
 	} else {
 		rn := (*lruNode)(n.CacheData)
@@ -135,6 +141,7 @@ func (r *lru) Ban(n *Node) {
 	r.mu.Unlock()
 }
 
+// 淘汰：将lruNode和node关联去掉
 func (r *lru) Evict(n *Node) {
 	r.mu.Lock()
 	rn := (*lruNode)(n.CacheData)
@@ -169,6 +176,7 @@ func (r *lru) EvictNS(ns uint64) {
 	}
 }
 
+// 淘汰所有
 func (r *lru) EvictAll() {
 	r.mu.Lock()
 	back := r.recent.prev

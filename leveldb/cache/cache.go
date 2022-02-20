@@ -24,7 +24,7 @@ type Cacher interface {
 	// SetCapacity sets cache capacity.
 	SetCapacity(capacity int)
 
-	// Promote promotes the 'cache node'.
+	// Promote promotes the 'cache node'.提升
 	Promote(n *Node)
 
 	// Ban evicts the 'cache node' and prevent subsequent 'promote'.
@@ -121,6 +121,7 @@ func (b *mBucket) get(r *Cache, h *mNode, hash uint32, ns, key uint64, noset boo
 	b.mu.Unlock()
 
 	// Update counter.
+	// 如果缓冲中nodes数量超过扩展阈值
 	grow := atomic.AddInt32(&r.nodes, 1) >= h.growThreshold
 	if bLen > mOverflowThreshold {
 		grow = grow || atomic.AddInt32(&h.overflow, 1) >= mOverflowGrowThreshold
@@ -128,6 +129,7 @@ func (b *mBucket) get(r *Cache, h *mNode, hash uint32, ns, key uint64, noset boo
 
 	// Grow.
 	if grow && atomic.CompareAndSwapInt32(&h.resizeInProgess, 0, 1) {
+		// buckets数量翻倍
 		nhLen := len(h.buckets) << 1
 		nh := &mNode{
 			buckets:         make([]unsafe.Pointer, nhLen),
@@ -219,7 +221,7 @@ func (b *mBucket) delete(r *Cache, h *mNode, hash uint32, ns, key uint64) (done,
 type mNode struct {
 	buckets         []unsafe.Pointer // []*mBucket
 	mask            uint32
-	pred            unsafe.Pointer // *mNode
+	pred            unsafe.Pointer // *mNode, 存储旧的buckets, 用于扩容、缩容
 	resizeInProgess int32
 
 	overflow        int32
@@ -237,6 +239,7 @@ func (n *mNode) initBucket(i uint32) *mBucket {
 		var node []*Node
 		if n.mask > p.mask {
 			// Grow.
+			// 从buckets找到一个有效的bucket
 			pb := (*mBucket)(atomic.LoadPointer(&p.buckets[i&p.mask]))
 			if pb == nil {
 				pb = p.initBucket(i & p.mask)
@@ -244,6 +247,7 @@ func (n *mNode) initBucket(i uint32) *mBucket {
 			m := pb.freeze()
 			// Split nodes.
 			for _, x := range m {
+				// 将数据hash到新的buckets
 				if x.hash&n.mask == i {
 					node = append(node, x)
 				}
@@ -273,7 +277,7 @@ func (n *mNode) initBucket(i uint32) *mBucket {
 			return b
 		}
 	}
-
+	// 默认返回空的 mbucket
 	return (*mBucket)(atomic.LoadPointer(&n.buckets[i]))
 }
 
@@ -281,6 +285,7 @@ func (n *mNode) initBuckets() {
 	for i := range n.buckets {
 		n.initBucket(uint32(i))
 	}
+	// 扩容或缩容后，将pred清空
 	atomic.StorePointer(&n.pred, nil)
 }
 
@@ -288,12 +293,14 @@ func (n *mNode) initBuckets() {
 type Cache struct {
 	mu     sync.RWMutex
 	mHead  unsafe.Pointer // *mNode
-	nodes  int32
+	nodes  int32          // 节点数量
 	size   int32
 	cacher Cacher
 	closed bool
 }
 
+// Cache 是数组+缓冲节点数组组成的哈希表
+// 加锁：最外层的Cache是读写锁；内部的Node节点是互斥锁
 // NewCache creates a new 'cache map'. The cacher is optional and
 // may be nil.
 func NewCache(cacher Cacher) *Cache {
@@ -396,6 +403,8 @@ func (r *Cache) Get(ns, key uint64, setFunc func() (size int, value Value)) *Han
 				}
 				n.mu.Unlock()
 				if r.cacher != nil {
+					// node 与 所有的Cacher要建立关系，便于将节点Promote
+					// 将LRU缓冲中的n节点位置提升
 					r.cacher.Promote(n)
 				}
 				return &Handle{unsafe.Pointer(n)}
@@ -576,13 +585,13 @@ type Node struct {
 	ns, key uint64
 
 	mu    sync.Mutex
-	size  int
+	size  int // Node的大小
 	value Value
 
 	ref   int32
 	onDel []func()
 
-	CacheData unsafe.Pointer
+	CacheData unsafe.Pointer // 对应的 LRU Node
 }
 
 // NS returns this 'cache node' namespace.

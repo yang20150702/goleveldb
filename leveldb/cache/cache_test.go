@@ -164,6 +164,7 @@ func TestCacheMap(t *testing.T) {
 
 func TestCacheMap_NodesAndSize(t *testing.T) {
 	c := NewCache(nil)
+	t.Log(c.Nodes(), c.Size())
 	if c.Nodes() != 0 {
 		t.Errorf("invalid nodes counter: want=%d got=%d", 0, c.Nodes())
 	}
@@ -174,6 +175,7 @@ func TestCacheMap_NodesAndSize(t *testing.T) {
 	set(c, 0, 2, 2, 2, nil)
 	set(c, 1, 1, 3, 3, nil)
 	set(c, 2, 1, 4, 1, nil)
+	t.Log(c.Nodes(), c.Size())
 	if c.Nodes() != 4 {
 		t.Errorf("invalid nodes counter: want=%d got=%d", 4, c.Nodes())
 	}
@@ -195,6 +197,7 @@ func TestLRUCache_Capacity(t *testing.T) {
 	set(c, 2, 3, 6, 1, nil).Release()
 	set(c, 2, 4, 7, 1, nil).Release()
 	set(c, 2, 5, 8, 1, nil).Release()
+	t.Log(c.Nodes(), c.Size())
 	if c.Nodes() != 7 {
 		t.Errorf("invalid nodes counter: want=%d got=%d", 7, c.Nodes())
 	}
@@ -560,4 +563,21 @@ func TestLRUCache_Close(t *testing.T) {
 	if delFuncCalled != 1 {
 		t.Errorf("delFunc isn't called 1 times: got=%d", delFuncCalled)
 	}
+}
+
+func TestHash(t *testing.T) {
+	mask := 5
+	for i := 0; i <= 6; i++ {
+		v := i & mask
+		t.Log(v)
+		t.Log("i: ", i, " grow len: ", i<<1)
+	}
+}
+
+func TestMask(t *testing.T) {
+	mask := 12
+	i := 2
+
+	t.Log(i & mask & mask)
+	t.Log(i & mask)
 }
